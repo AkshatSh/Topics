@@ -38,6 +38,8 @@ Limitations
 Current version does not account for grammar when computing the sentiment score it also does not support training for new words.
 The search parameters right now only account for one word without special characters.
 
+For the Facebook Sign-in to work the webclient must be on a server and register with facebook in app management. 
+
 Sources
 =======
 Sentimental node module for the AFIN 111 JSON file 
