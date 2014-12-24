@@ -7,6 +7,8 @@ var OAuth = require('OAuth');
 var AFINN = require('./AFINN');
 var natural = require('natural');
 var config = require('./config');
+var states = require('./states');
+var geolib = require('geolib');
 var port = process.env.PORT || 8080; 
 var count = 0;
 var router = express.Router();
@@ -65,10 +67,11 @@ router.route('/getFBLocations')
 	});
 
 // Gets the user feed from facebook
-router.route('/getFBFeed')
+router.route('/getFBFeed/:token')
 	.get(function (req, res){
 		var tempResult = [];
 		var tempDef = $.Deferred();
+        var fbToken = req.params.token;
 		getAllUserFeed(fbToken, fbBaseUrl, tempResult, tempDef);
 		$.when(tempDef).done(function(){
 			res.json(tempResult);
@@ -76,11 +79,12 @@ router.route('/getFBFeed')
 	});
 
 // Searches for a topic on the user feed on facebook
-router.route('/getFBFeed/:topic')
+router.route('/getFBFeed/:topic&t=:token')
 	.get(function (req, res){
 		var tempTopic = req.params.topic;
 		var tempResult = [];
 		var tempDef = $.Deferred();
+        var fbToken = req.params.token;
 		getUserFeed(fbToken, fbBaseUrl, tempTopic, tempResult, tempDef);
 		$.when(tempDef).done(function(){
 			res.json(tempResult);
@@ -88,13 +92,20 @@ router.route('/getFBFeed/:topic')
 	});
 
 // Searches for a topic on Twitter
-router.route('/getTweets/:topic')
+router.route('/getTweets/:topic&loc=:l')
 	.get(function (req, res){
 		var x;
 		var tempDef = $.Deferred();
 		var result = {min: 0, max: 0, data: []};
 		var tempTopic = req.params.topic;
-		getTweetByTopic(tempTopic, result, tempDef);
+        var location = req.params.l;
+
+        if (location == "USA"){
+            getTweetByTopicForUS(tempTopic, result, tempDef, location);
+        } else {
+		    getTweetByTopic(tempTopic, result, tempDef, location);
+        }
+
 		$.when(tempDef).done(function(){
 
             // Train the words for every call
@@ -106,15 +117,16 @@ router.route('/getTweets/:topic')
 
 // Not currently supported
 // Get the all the users social media results and analyze them
-router.route('/getSocialMedia/:topic')
+router.route('/getSocialMedia/:topic&token=:t')
     .get(function (req, res){
         var x;
         var tempDef = $.Deferred();
         var tempDef2 = $.Deferred();
         var result = {min: 0, max: 0, data: []};
         var tempTopic = req.params.topic;
+        var tempToken = req.params.t;
         getTweetByTopic(tempTopic, result, tempDef);
-        getUserFeed(fbToken, fbBaseUrl, topic, result, tempDef2);
+        getUserFeed(tempToken, fbBaseUrl, tempTopic, result, tempDef2);
         $.when(tempDef, tempDef2).done(function(){
             res.json(result);
         }); 
@@ -178,15 +190,15 @@ function getUserFeed(token, baseUrl, topic, result, tempDef){
 			topic = topic.toLowerCase();
         	var feedRes = JSON.parse(data);
 
-            // The object which contains all the information needed by the client
-            var obj = {
-                            oName: "Placeholder",
-                            number: result.data.length,
-                            source: "facebook"
-                        };
-
             // Iterate through the user feed and find posts that include the topic
         	for (i = 0; i < feedRes.data.length; i++){
+
+                // The object which contains all the information needed by the client
+                var obj = {
+                        oName: "Placeholder",
+                        number: result.data.length,
+                        source: "facebook"
+                    };
 
                 // Searches all posts 
         		if (feedRes.data[i].message != null){
@@ -215,6 +227,7 @@ function getUserFeed(token, baseUrl, topic, result, tempDef){
         			}
         	    }
         	}
+
         	imDone(tempDef);
     	}, 'text');
     } catch (e){
@@ -267,28 +280,137 @@ function getLocationData(token, baseUrl){
 //-------------------Twitter--Data--------------
 
 // Search for a tweet by the topic 
-function getTweetByTopic(tempTopic, result, tempDef){
-
+function getTweetByTopicForUS(tempTopic, result, tempDef, location){
     //Access Twitter API with OAuth
-	oauth.get(
-            // Currently only supports one word search for topic
-      		'https://api.twitter.com/1.1/search/tweets.json?q=' + tempTopic + '&count=100',
-      		config.twitterAPIKey, 
-      		config.twitterAPISecret, 
-      		function (e, data, res){
-        		if (e) console.error(e);        
-        		var x = JSON.parse(data);
+    var q = getQuery("West", tempTopic);
+    var q2 = getQuery("Middle", tempTopic);
+    var q3 = getQuery("East", tempTopic);
+
+    var resultStates = [];
+
+    var statesObject = {};
+    
+    // Store the min and the max in an Array
+    var minMax = [0,0];
+
+    var temp2Def = $.Deferred();
+
+    accessTwitterApi(q, result, resultStates, minMax, temp2Def, statesObject);
+
+    var temp3Def = $.Deferred();
+    var temp4Def = $.Deferred();
+    
+    $.when(temp2Def).done(function(){
+        accessTwitterApi(q2, result, resultStates, minMax, temp3Def, statesObject);
+    });
+
+    $.when(temp3Def).done(function(){
+        accessTwitterApi(q3, result, resultStates, minMax, temp4Def, statesObject);
+    });
+
+    $.when(temp4Def).done(function(){
+        delete statesObject[null];
+
+        // Store the min and the max sentiment scores in the response
+        result.min = minMax[0];
+        result.max = minMax[1];
+
+        sentimentColor(result);
+
+        colorStates(statesObject);
+
+        result.states = statesObject;
+
+        console.log(result);
+
+        imDone(tempDef);    
+    });
+}  
+
+// Search for a tweet by the topic 
+function getTweetByTopic(tempTopic, result, tempDef, location){
+    //Access Twitter API with OAuth
+    var q = getQuery(location, tempTopic);
+
+    var resultStates = [];
+
+    var statesObject = {};
+    
+    // Store the min and the max in an Array
+    var minMax = [0,0];
+
+    var temp2Def = $.Deferred();
+
+	accessTwitterApi(q, result, resultStates, minMax, temp2Def, statesObject);
+
+    $.when(temp2Def).done(function(){
+        delete statesObject[null];
+
+        // Store the min and the max sentiment scores in the response
+        result.min = minMax[0];
+        result.max = minMax[1];
+
+        sentimentColor(result);
+
+        colorStates(statesObject);
+
+        result.states = statesObject;
+
+        console.log(result);
+
+        imDone(tempDef);     
+    });
+}  
+
+// Generates a query for the Twitter API depending on a US location (East, Middle, West)
+// All tweets are limited to english for optimal results from the sentimental analysis
+function getQuery(location, tempTopic){
+    var count = 200;
+    var lang = "en";
+    var geocode = "";
+    var q = "q=" + tempTopic + "&count=" + count + "&lang=" + lang;
+
+    if (location == "East"){
+
+        var lat = 36.265802;
+        var lng = -81.980831;
+        var radius = 33834;
+        geocode = "" + lat + "," + lng + "," + radius + "km";
+        q += "&geocode=" + geocode;
+
+    } else if (location == "Middle"){
+
+        var lat = 39.8;
+        var lng = -95.583068847656;
+        var radius = 1000;
+        geocode = "" + lat + "," + lng + "," + radius + "km";
+        q += "&geocode=" + geocode;
+
+    } else if (location == "West"){
+
+        var lat = 40.766145;
+        var lng = -116.895370;
+        var radius = 2048;
+        geocode = "" + lat + "," + lng + "," + radius + "km";
+        q += "&geocode=" + geocode;
+
+    }
+    return q; 
+}
+
+// Creates the result object with each piece of text analyzed 
+function createResultObject(result, e, data, res, resultStates, minMax){
+                console.log("start");
+                if (e) console.error(e);        
+                var x = JSON.parse(data);
 
                 // Number of results
-        		var i = (x.statuses.length);
+                var i = (x.statuses.length);
                 console.log(i);
 
-                // Store the min and the max in an Array
-                var minMax = [0,0];
-
                 // Iterate through each tweet
-        		for (j = 0; j < i; j++){
-        			var temps = (x.statuses[j].text);
+                for (j = 0; j < i; j++){
+                    var temps = (x.statuses[j].text);
 
                     // Get the sentiment score for the text in the tweet
                     var sent = sentimentAnalysis(temps.toLowerCase(), minMax);
@@ -301,29 +423,91 @@ function getTweetByTopic(tempTopic, result, tempDef){
                         source: "twitter",
                         text: temps
                     };
-                    result.data.push(obj);
-        		}
-
-                // Store the min and the max sentiment scores in the response
-                result.min = minMax[0];
-                result.max = minMax[1];
-
-                // Assign the proper color for the data shown (Green for positive, Red for Negative, and Black for neutral)
-                for (j = 0; j < result.data.length; j++){
-                    if (result.data[j].score < 0){
-                        result.data[j].color = "#FF0000";
-                    } else if (result.data[j].score > 0){
-                        result.data[j].color = "#009933";
-                    } else {
-                        result.data[j].color = "#000000";
+                    var point = {};
+                    if (x.statuses[j].geo){
+                        point.latitude = x.statuses[j].geo.coordinates[0];
+                        point.longitude = x.statuses[j].geo.coordinates[1];
+                        var nState = getState(point);
+                        var stateFound = false;
+                        for (q = 0; q < resultStates.length; q++){
+                            if (nState == resultStates[q][0]){
+                                resultStates[q][1]+= sent;
+                                resultStates[q][2]++;
+                                stateFound = true;
+                            }
+                        }
+                        if (!stateFound){
+                            resultStates.push([nState, sent, 1]);
+                        }
                     }
-                }
+                    result.data.push(obj);
+                } 
+}
 
-        		imDone(tempDef);    
+// Accesses the Twitter API and stores the results from the query locally
+function accessTwitterApi(q, result, resultStates, minMax, tempDef, statesObject){
+    oauth.get(
+        'https://api.twitter.com/1.1/search/tweets.json?' + q,
+        config.twitterAPIKey, 
+        config.twitterAPISecret, 
+        function (e, data, res){
 
-      			}
-			);
-}   
+            createResultObject(result, e, data, res, resultStates, minMax);
+
+            for (j = 0; j < resultStates.length; j++){
+                statesObject[resultStates[j][0]] = {SA: (resultStates[j][1])};
+            }
+
+            tempDef.resolve();
+        }
+    );
+}
+
+// Gets the color associated with the sentiment score
+function sentimentColor(result){
+    // Assign the proper color for the data shown (Green for positive, Red for Negative, and Black for neutral)
+    for (j = 0; j < result.data.length; j++){
+        if (result.data[j].score < 0){
+            result.data[j].color = "#FF0000";
+        } else if (result.data[j].score > 0){
+            result.data[j].color = "#009933";
+        } else {
+            result.data[j].color = "#000000";
+        }
+    }
+}
+
+// Gets the color associated with each state when looking at the US
+function colorStates(statesObject){
+    for (var key in statesObject){
+        if (statesObject[key].SA < 0){
+            statesObject[key].fillKey = "LOW";
+        } else if (statesObject[key].SA > 0){
+            statesObject[key].fillKey = "HIGH";
+        } else {
+            statesObject[key].fillKey = "Neutral";
+        }
+    }
+}
+
+// Read the states.json file, look through the file and given a point return the state which the point is inside
+function getState(point){
+    var found = false;
+    for (a = 0; a < states["states"]["state"].length; a++){
+        var stateCoor = [];
+        for (b = 0; b < states["states"]["state"][a]["point"].length; b++){
+            stateCoor.push({latitude: states["states"]["state"][a]["point"][b]["-lat"], longitude: states["states"]["state"][a]["point"][b]["-lng"]});
+        }
+        if (geolib.isPointInside(point, stateCoor)){
+            found = true;
+            return states["states"]["state"][a]["-name"];
+            break;
+        }
+    }
+    if (!found){
+        return null;
+    }
+}
 
 //-------------Sentiment--Analysis--------
 function sentimentAnalysis(x, minMax){
