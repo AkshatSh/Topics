@@ -32,6 +32,7 @@ text {
 .dot {
     opacity: .7;
     cursor: pointer;
+    border: 1px solid #000;
 }
 
 .d3-tip {
@@ -60,13 +61,13 @@ text {
   top: 100%;
   left: 0;
 }
-#search {
+button {
   color: #900;
   border: 1px solid #900;
   font-weight: bold;
 }
 
-#search:hover {
+button:hover {
     color: #FFF;
     background: #900;
 }
@@ -75,5 +76,10 @@ text {
     font-size: 10px;
 }
 
+.logon {
+  float: right;
+}
 
-
+#signinButton{
+  float:right;
+}

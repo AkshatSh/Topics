@@ -3,19 +3,23 @@
 	<head>
 		<script src="http://code.jquery.com/jquery-latest.min.js" type="text/javascript"></script>
     <script src="mainScript.js" type="text/javascript"></script>
-    <script src="http://d3js.org/d3.v3.min.js"></script>
-    <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+    <script src="d3.v3.min.js"></script>
+    <script src="d3.tip.v0.6.3.js"></script>
+    <script src="http://code.jquery.com/jquery-latest.min.js" type="text/javascript"></script>
+    <script src="topojson.v1.min.js"></script>
+    <script src="bower_components/datamaps/dist/datamaps.all.min.js"></script>
     <link rel="stylesheet" type="text/css" href="mainStyle.css">
 		<title>Topics</title>
 	<h3>
   Topics
   <input type="text" name="firstname" id="topic">
-  <button type="button" id="search">Search</button>
+  <button type="button" id="search">Plot</button>
+  <button type="button" id="us">United States</button>
+  <fb:login-button scope="public_profile,email,read_stream" size="medium" class="logon" onlogin="checkLoginState();"></fb:login-button>
+  </span>
   </h3>
 
-<p>Social Media Sentiment Analysis<span class="name">Akshat Shrivastava</span>
-
-</p>
+<p>Social Media Sentiment Analysis <span id="currentTopic"></span><span class="name">Please Log In</span></p>
 <div id="graphArea"></div>
 
 </html>
