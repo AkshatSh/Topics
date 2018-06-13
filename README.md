@@ -13,6 +13,7 @@ A node.js server which queries social media sites given a specific topic and ana
 Uses a tokenizer to seperate each of the words in the text. Then an AFINN 111 dictionary is used to search for words with a pre-set sentiment score and summates the score for each word. When it  encounters a new word it stores it in a local object (in future version will be in a file) and computes a score for each new word by computing the average sentiment score for each tweet with that word.
 
 The server also looks through each tweet and uses the geolib module to find which state the tweet is located in. In turn the server now provides the client by the total sentiment score for each state in the response and that data is used to generate the a map of the US color coding the overall sentiment scores for each state. 
+
 To install Node Server:
 ======
   -Clone the repository
